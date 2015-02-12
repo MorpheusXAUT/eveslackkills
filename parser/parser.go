@@ -150,7 +150,7 @@ func (parser *Parser) Update(corporation *models.Corporation) error {
 			continue
 		}
 
-		err = parser.SendMessage(corporation, loss.KillID, loss.Victim.CharacterName, shipName, true)
+		err = parser.SendMessage(corporation, loss.KillID, loss.Victim.CharacterName, shipName, false)
 		if err != nil {
 			misc.Logger.Warnf("Failed to send loss message: [%v]", err)
 			continue
