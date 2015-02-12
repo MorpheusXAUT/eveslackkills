@@ -21,10 +21,6 @@ type Configuration struct {
 	DatabasePassword string
 	// DebugLevel represents the debug level for log messages
 	DebugLevel int
-	// EVECorporationIDs represents the IDs of the EVE corporations to check for kill- or loss-mails
-	EVECorporationIDs []int
-	// IgnoredSystemIDs represents the IDs of the solar systems to ignore while looking for kill- or loss-mails
-	IgnoredSystemIDs []int
 	// SlackWebhookURL represents the webhook URL provided by slack, used by the application to send chat messages
 	SlackWebhookURL string
 }

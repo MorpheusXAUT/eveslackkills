@@ -164,6 +164,13 @@ func (parser *Parser) Update(corporation *models.Corporation) error {
 		time.Sleep(time.Second * 1)
 	}
 
+	_, err = parser.database.SaveCorporation(corporation)
+	if err != nil {
+		return err
+	}
+
+	misc.Logger.Debugf("Finished update for corporation #%d", corporation.EVECorporationID)
+
 	return nil
 }
 
@@ -202,7 +209,7 @@ func (parser *Parser) SendMessage(corporation *models.Corporation, killID int64,
 			return err
 		}
 
-		return fmt.Errorf("Failed to send message: %s", string(respBody))
+		return fmt.Errorf("Failed to send message: %s (status code: %d)", string(respBody), resp.StatusCode)
 	}
 
 	return nil
@@ -219,7 +226,7 @@ func (parser *Parser) FetchKills(corporation *models.Corporation) (models.ZKillb
 	defer resp.Body.Close()
 
 	err = xml.NewDecoder(resp.Body).Decode(&zKillboardEntry)
-	if err != nil {
+	if err != nil && !strings.EqualFold(err.Error(), "EOF") {
 		return zKillboardEntry, err
 	}
 
@@ -239,7 +246,7 @@ func (parser *Parser) FetchLosses(corporation *models.Corporation) (models.ZKill
 	defer resp.Body.Close()
 
 	err = xml.NewDecoder(resp.Body).Decode(&zKillboardEntry)
-	if err != nil {
+	if err != nil && !strings.EqualFold(err.Error(), "EOF") {
 		return zKillboardEntry, err
 	}
 
