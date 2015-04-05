@@ -81,19 +81,19 @@ func (parser *Parser) Update(corporation *models.Corporation) error {
 		}
 
 		skip := false
-		for _, region := range corporation.IgnoredRegions {
-			if region == regionID {
+		for _, solarSystem := range corporation.IgnoredSolarSystems {
+			if solarSystem == regionID || solarSystem == kill.SolarSystemID {
 				skip = true
 				break
 			}
 		}
 
 		if skip {
-			misc.Logger.Debugf("Found region ID %d for solar system #%d on ignore list, skipping kill", regionID, kill.SolarSystemID)
+			misc.Logger.Debugf("Found solar system ID %d for solar system #%d on ignore list, skipping kill", regionID, kill.SolarSystemID)
 			continue
 		}
 
-		misc.Logger.Tracef("Region ID %d for solar system #%d not found on ignore list, posting kill", regionID, kill.SolarSystemID)
+		misc.Logger.Tracef("Solar system ID %d for solar system #%d not found on ignore list (%v), posting kill", regionID, kill.SolarSystemID, corporation.IgnoredSolarSystems)
 
 		shipName, err := parser.database.QueryShipName(kill.Victim.ShipTypeID)
 		if err != nil {
@@ -130,19 +130,19 @@ func (parser *Parser) Update(corporation *models.Corporation) error {
 		}
 
 		skip := false
-		for _, region := range corporation.IgnoredRegions {
-			if region == regionID {
+		for _, solarSystem := range corporation.IgnoredSolarSystems {
+			if solarSystem == regionID || solarSystem == loss.SolarSystemID {
 				skip = true
 				break
 			}
 		}
 
 		if skip {
-			misc.Logger.Debugf("Found region ID %d for solar system #%d on ignore list, skipping loss", regionID, loss.SolarSystemID)
+			misc.Logger.Debugf("Found solar system ID %d for solar system #%d on ignore list, skipping loss", regionID, loss.SolarSystemID)
 			continue
 		}
 
-		misc.Logger.Tracef("Region ID %d for solar system #%d not found on ignore list, posting loss", regionID, loss.SolarSystemID)
+		misc.Logger.Tracef("Solar system ID %d for solar system #%d not found on ignore list (%v), posting loss", regionID, loss.SolarSystemID, corporation.IgnoredSolarSystems)
 
 		shipName, err := parser.database.QueryShipName(loss.Victim.ShipTypeID)
 		if err != nil {

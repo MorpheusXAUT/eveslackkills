@@ -22,8 +22,8 @@ type Connection interface {
 	// LoadCorporation retrieves the corporation with the given ID from the database, returning an error if the query failed
 	LoadCorporation(corporationID int64) (*models.Corporation, error)
 
-	// LoadAllIgnoredRegionsForCorporation retrieves all ignored regions associated with the given corporation from the database, returning an error if the query failed
-	LoadAllIgnoredRegionsForCorporation(corporationID int64) ([]int64, error)
+	// LoadAllIgnoredSolarSystemsForCorporation retrieves all ignored solar systems associated with the given corporation from the database, returning an error if the query failed
+	LoadAllIgnoredSolarSystemsForCorporation(corporationID int64) ([]int64, error)
 
 	// QueryShipName looks up the given ship type ID and returns the ship's name, returning an error if the query failed
 	QueryShipName(shipTypeID int64) (string, error)

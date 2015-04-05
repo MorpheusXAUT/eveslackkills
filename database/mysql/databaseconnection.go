@@ -74,12 +74,12 @@ func (c *DatabaseConnection) LoadAllCorporations() ([]*models.Corporation, error
 	}
 
 	for _, corporation := range corporations {
-		ignoredRegions, err := c.LoadAllIgnoredRegionsForCorporation(corporation.ID)
+		ignoredSolarSystems, err := c.LoadAllIgnoredSolarSystemsForCorporation(corporation.ID)
 		if err != nil {
 			return nil, err
 		}
 
-		corporation.IgnoredRegions = ignoredRegions
+		corporation.IgnoredSolarSystems = ignoredSolarSystems
 	}
 
 	return corporations, nil
@@ -94,26 +94,26 @@ func (c *DatabaseConnection) LoadCorporation(corporationID int64) (*models.Corpo
 		return nil, err
 	}
 
-	ignoredRegions, err := c.LoadAllIgnoredRegionsForCorporation(corporation.ID)
+	ignoredSolarSystems, err := c.LoadAllIgnoredSolarSystemsForCorporation(corporation.ID)
 	if err != nil {
 		return nil, err
 	}
 
-	corporation.IgnoredRegions = ignoredRegions
+	corporation.IgnoredSolarSystems = ignoredSolarSystems
 
 	return corporation, nil
 }
 
-// LoadAllIgnoredRegionsForCorporation retrieves all ignored regions associated with the given corporation from the MySQL database, returning an error if the query failed
-func (c *DatabaseConnection) LoadAllIgnoredRegionsForCorporation(corporationID int64) ([]int64, error) {
-	var ignoredRegions []int64
+// LoadAllIgnoredSolarSystemsForCorporation retrieves all ignored solar systems associated with the given corporation from the MySQL database, returning an error if the query failed
+func (c *DatabaseConnection) LoadAllIgnoredSolarSystemsForCorporation(corporationID int64) ([]int64, error) {
+	var ignoredSolarSystems []int64
 
-	err := c.conn.Select(&ignoredRegions, "SELECT regionid FROM ignoredregions WHERE corporationID=?", corporationID)
+	err := c.conn.Select(&ignoredSolarSystems, "SELECT solarsystemid FROM ignoredsolarsystems WHERE corporationID=?", corporationID)
 	if err != nil {
 		return nil, err
 	}
 
-	return ignoredRegions, nil
+	return ignoredSolarSystems, nil
 }
 
 // QueryShipName looks up the given ship type ID in the MySQL database and returns the ship's name, returning an error if the query failed
