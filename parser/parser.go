@@ -80,6 +80,8 @@ func (parser *Parser) Update(corporation *models.Corporation) error {
 	misc.Logger.Tracef("Fetched %d kills for corporation #%d", len(kills), corporation.EVECorporationID)
 
 	for _, kill := range kills {
+		misc.Logger.Tracef("Processing kill #%d (victim %q)", kill.KillID, kill.Victim.CharacterName)
+
 		regionID, err := parser.database.QueryRegionID(kill.SolarSystemID)
 		if err != nil {
 			misc.Logger.Warnf("Failed to query region ID for solar system #%d", kill.SolarSystemID)
@@ -111,6 +113,8 @@ func (parser *Parser) Update(corporation *models.Corporation) error {
 			corporation.LastKillID = kill.KillID
 		}
 
+		misc.Logger.Tracef("Finished processing kill #%d (victim %q)", kill.KillID, kill.Victim.CharacterName)
+
 		// Wait in order to abide to Slack's message limit
 		time.Sleep(time.Second * 1)
 	}
@@ -123,6 +127,8 @@ func (parser *Parser) Update(corporation *models.Corporation) error {
 	misc.Logger.Tracef("Fetched %d losses for corporation #%d", len(losses), corporation.EVECorporationID)
 
 	for _, loss := range losses {
+		misc.Logger.Tracef("Processing loss #%d (victim %q)", loss.KillID, loss.Victim.CharacterName)
+
 		regionID, err := parser.database.QueryRegionID(loss.SolarSystemID)
 		if err != nil {
 			misc.Logger.Warnf("Failed to query region ID for solar system #%d", loss.SolarSystemID)
@@ -154,6 +160,8 @@ func (parser *Parser) Update(corporation *models.Corporation) error {
 			corporation.LastLossID = loss.KillID
 		}
 
+		misc.Logger.Tracef("Finished processing loss #%d (victim %q)", loss.KillID, loss.Victim.CharacterName)
+
 		// Wait in order to abide to Slack's message limit
 		time.Sleep(time.Second * 1)
 	}
@@ -172,12 +180,6 @@ func (parser *Parser) Update(corporation *models.Corporation) error {
 func (parser *Parser) SendMessage(corporation *models.Corporation, entry models.ZKillboardEntry, killEntry bool) error {
 	var payload models.SlackPayload
 	var kill models.SlackAttachment
-	var damageTaken models.SlackField
-	var highestDamage models.SlackField
-	var attackers models.SlackField
-	var value models.SlackField
-	var system models.SlackField
-	var ship models.SlackField
 
 	var killer models.ZKillboardAttacker
 	var killerName string
@@ -188,6 +190,8 @@ func (parser *Parser) SendMessage(corporation *models.Corporation, entry models.
 
 	var highestDamageDealer models.ZKillboardAttacker
 	var highestDamageValue int64
+
+	var damageTakenTitle string
 
 	for _, attacker := range entry.Attackers {
 		if attacker.FinalBlow == 1 {
@@ -243,11 +247,11 @@ func (parser *Parser) SendMessage(corporation *models.Corporation, entry models.
 	if killEntry {
 		comment = corporation.KillComment
 		kill.Color = "good"
-		damageTaken.Title = "Damage dealt"
+		damageTakenTitle = "Damage dealt"
 	} else {
 		comment = corporation.LossComment
 		kill.Color = "danger"
-		damageTaken.Title = "Damage taken"
+		damageTakenTitle = "Damage taken"
 	}
 
 	killLink := fmt.Sprintf("https://zkillboard.com/kill/%d/", entry.KillID)
@@ -266,38 +270,53 @@ func (parser *Parser) SendMessage(corporation *models.Corporation, entry models.
 	kill.TitleLink = killLink
 	kill.ThumbURL = fmt.Sprintf("https://imageserver.eveonline.com/render/%d_64.png", entry.Victim.ShipTypeID)
 
-	damageTaken.Value = humanize.Comma(entry.Victim.DamageTaken)
-	damageTaken.Short = true
+	kill.Fields = append(kill.Fields, models.SlackField{
+		Title: damageTakenTitle,
+		Value: humanize.Comma(entry.Victim.DamageTaken),
+		Short: true,
+	})
 
-	attackers.Title = "Pilots involved"
-	attackers.Value = fmt.Sprintf("%d", len(entry.Attackers))
-	attackers.Short = true
+	kill.Fields = append(kill.Fields, models.SlackField{
+		Title: "Pilots involved",
+		Value: humanize.Comma(int64(len(entry.Attackers))),
+		Short: true,
+	})
 
-	value.Title = "ISK Value"
-	value.Value = fmt.Sprintf("%s ISK", humanize.Commaf(entry.Misc.TotalValue))
-	value.Short = false
+	kill.Fields = append(kill.Fields, models.SlackField{
+		Title: "ISK value",
+		Value: fmt.Sprintf("%s ISK", humanize.Commaf(entry.Misc.TotalValue)),
+		Short: true,
+	})
 
-	highestDamage.Title = "Highest damage"
-	highestDamage.Value = fmt.Sprintf("<https://zkillboard.com/character/%d|%s> (%d damage)", highestDamageDealer.CharacterID, highestDamageDealer.CharacterName, highestDamageValue)
-	highestDamage.Short = true
+	kill.Fields = append(kill.Fields, models.SlackField{
+		Title: "Highest damage",
+		Value: fmt.Sprintf("<https://zkillboard.com/character/%d|%s> (%s damage)", highestDamageDealer.CharacterID, highestDamageDealer.CharacterName, humanize.Comma(highestDamageValue)),
+		Short: true,
+	})
 
-	system.Title = "Solar system"
-	system.Value = fmt.Sprintf("<https://zkillboard.com/system/%d|%s>", entry.SolarSystemID, solarSystemName)
-	system.Short = true
+	kill.Fields = append(kill.Fields, models.SlackField{
+		Title: "Solar system",
+		Value: fmt.Sprintf("<https://zkillboard.com/system/%d|%s>", entry.SolarSystemID, solarSystemName),
+		Short: true,
+	})
 
-	ship.Title = "Ship"
-	ship.Value = victimShipName
-	ship.Short = true
+	kill.Fields = append(kill.Fields, models.SlackField{
+		Title: "Ship",
+		Value: victimShipName,
+		Short: true,
+	})
 
-	kill.Fields = append(kill.Fields, damageTaken)
-	kill.Fields = append(kill.Fields, attackers)
-	kill.Fields = append(kill.Fields, highestDamage)
-	kill.Fields = append(kill.Fields, ship)
-	kill.Fields = append(kill.Fields, value)
-	kill.Fields = append(kill.Fields, system)
+	kill.Fields = append(kill.Fields, models.SlackField{
+		Title: "Timestamp",
+		Value: entry.KillTime,
+		Short: true,
+	})
 
-	kill.UnfurlLinks = false
-	kill.Channel = "sam_testing"
+	kill.Fields = append(kill.Fields, models.SlackField{
+		Title: "Kill ID",
+		Value: fmt.Sprintf("%d", entry.KillID),
+		Short: true,
+	})
 
 	payload.Attachments = append(payload.Attachments, kill)
 

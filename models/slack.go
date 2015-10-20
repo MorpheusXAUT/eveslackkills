@@ -7,14 +7,12 @@ type SlackPayload struct {
 
 // SlackAttachment represents a single attachment as sent as a Slack payload
 type SlackAttachment struct {
-	Title       string       `json:"title,omitempty"`
-	TitleLink   string       `json:"title_link,omitempty"`
-	ThumbURL    string       `json:"thumb_url,omitempty"`
-	Fallback    string       `json:"fallback,omitempty"`
-	Color       string       `json:"color,omitempty"`
-	Fields      []SlackField `json:"fields,omitempty"`
-	UnfurlLinks bool         `json:"unfurl_links"`
-	Channel     string       `json:"channel,omitempty"`
+	Title     string       `json:"title,omitempty"`
+	TitleLink string       `json:"title_link,omitempty"`
+	ThumbURL  string       `json:"thumb_url,omitempty"`
+	Fallback  string       `json:"fallback,omitempty"`
+	Color     string       `json:"color,omitempty"`
+	Fields    []SlackField `json:"fields,omitempty"`
 }
 
 // SlackField represents a single field used within Slack attachments for formatting
