@@ -5,6 +5,43 @@ eveslackkills
 
 eveslackkills fetches kill- and loss-mails for a given corporation and posts them to a specified killboard-channel in Slack.
 
+Requirements
+---------
+
+- Slack
+- MySQL server
+- [Go 1.2 or newer](https://golang.org/dl/) to compile application (latest recommended)
+- [EVE Static Data Export for MySQL](https://www.fuzzwork.co.uk/dump/) (only "invTypes" and "mapSolarSystems" required)
+
+
+Instructions
+---------
+
+- Create a new "Incoming WebHooks" integration in Slack (https://YOURNAME.slack.com/services/new/incoming-webhook)
+  - Fill in channel/username as required
+  - Copy generated web hook URL for later use config
+- Clone the GitHub project and build the Go application
+  - Use "go get -u ./..." to fetch all requirements
+  - Build the app using "go build -v ./..."
+  - You will only need the generated executable, no additional files as cloned from the repository
+- Create the MySQL database required for the application
+  - Use the script provided in database/mysql/eveslackkills_create.sql to create the database/tables required
+  - Import the "invTypes" and "mapSolarSystems" tables from the EVE SDE MySQL dump
+  - Set up a username/password for the application to access the database
+- Create a config file "config.cfg" using JSON format
+
+```{
+	"DatabaseType": 1,
+	"DatabaseHost": "HOSTNAME:PORT",
+	"DatabaseSchema": "MYSQLDATABASE",
+	"DatabaseUser": "MYSQLUSER",
+	"DatabasePassword": "MYSQLPASSWORD",
+	"DebugLevel": 1,
+	"SlackWebhookURL": "SLACKHOOKURL"
+}```
+
+- Run the application and use a monitoring service such as supervisord to restart it automatically if required
+
 Copyright
 ---------
 

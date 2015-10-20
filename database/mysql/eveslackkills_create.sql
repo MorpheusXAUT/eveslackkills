@@ -23,11 +23,11 @@ CREATE TABLE IF NOT EXISTS `corporations` (
 -- Data exporting was unselected.
 
 
--- Dumping structure for table eveslackkills.ignoredregions
-CREATE TABLE IF NOT EXISTS `ignoredregions` (
+-- Dumping structure for table eveslackkills.ignoredsolarsystems
+CREATE TABLE IF NOT EXISTS `ignoredsolarsystems` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `corporationid` int(11) NOT NULL,
-  `regionid` int(11) NOT NULL,
+  `solarsystemid` int(11) NOT NULL,
   PRIMARY KEY (`id`),
   KEY `fk_ignoredregions_corporation` (`corporationid`),
   CONSTRAINT `fk_ignoredregions_corporation` FOREIGN KEY (`corporationid`) REFERENCES `corporations` (`id`) ON UPDATE CASCADE

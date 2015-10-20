@@ -129,7 +129,7 @@ func (c *DatabaseConnection) QueryShipName(shipTypeID int64) (string, error) {
 	return shipName, nil
 }
 
-// QueryShipName looks up the given solar system ID in the MySQL database and returns the associated region ID, returning an error if the query failed
+// QueryRegionID looks up the given solar system ID in the MySQL database and returns the associated region ID, returning an error if the query failed
 func (c *DatabaseConnection) QueryRegionID(solarSystemID int64) (int64, error) {
 	row := c.conn.QueryRowx("SELECT regionID FROM mapSolarSystems WHERE solarSystemID=?", solarSystemID)
 
@@ -140,6 +140,19 @@ func (c *DatabaseConnection) QueryRegionID(solarSystemID int64) (int64, error) {
 	}
 
 	return regionID, nil
+}
+
+// QuerySolarSystemName looks up the given solar system ID in the MySQL database and returns the associated solar system name, returning an error if the query failed
+func (c *DatabaseConnection) QuerySolarSystemName(solarSystemID int64) (string, error) {
+	row := c.conn.QueryRowx("SELECT solarSystemName from mapSolarSystems WHERE solarSystemID=?", solarSystemID)
+
+	var solarSystemName string
+	err := row.Scan(&solarSystemName)
+	if err != nil {
+		return "", err
+	}
+
+	return solarSystemName, nil
 }
 
 // SaveCorporation saves a corporation to the database, returning the updated model or an error if the query failed

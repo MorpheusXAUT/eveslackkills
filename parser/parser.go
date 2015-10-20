@@ -2,7 +2,7 @@ package parser
 
 import (
 	"bytes"
-	"encoding/xml"
+	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"net/http"
@@ -11,11 +11,14 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dustin/go-humanize"
+
 	"github.com/morpheusxaut/eveslackkills/database"
 	"github.com/morpheusxaut/eveslackkills/misc"
 	"github.com/morpheusxaut/eveslackkills/models"
 )
 
+// Parser represents the parser used for retrieving kills from zKillboard and posting them to Slack
 type Parser struct {
 	Corporations []*models.Corporation
 
@@ -24,6 +27,7 @@ type Parser struct {
 	database  database.Connection
 }
 
+// SetupParser sets up a new parser with the given information
 func SetupParser(conf *misc.Configuration, db database.Connection, interval time.Duration) (*Parser, error) {
 	parser := &Parser{
 		Corporations: make([]*models.Corporation, 0),
@@ -42,6 +46,7 @@ func SetupParser(conf *misc.Configuration, db database.Connection, interval time
 	return parser, nil
 }
 
+// Start starts the parsing operations and retrieves kills and losses for every tracked corporation regularly
 func (parser *Parser) Start() {
 	for _, corporation := range parser.Corporations {
 		err := parser.Update(corporation)
@@ -63,6 +68,7 @@ func (parser *Parser) Start() {
 	}
 }
 
+// Update retrieves the latest kills and losses and posts them to Slack if required
 func (parser *Parser) Update(corporation *models.Corporation) error {
 	misc.Logger.Debugf("Running update for corporation #%d", corporation.EVECorporationID)
 
@@ -71,9 +77,9 @@ func (parser *Parser) Update(corporation *models.Corporation) error {
 		return err
 	}
 
-	misc.Logger.Tracef("Fetched %d kills for corporation #%d", len(kills.Rows), corporation.EVECorporationID)
+	misc.Logger.Tracef("Fetched %d kills for corporation #%d", len(kills), corporation.EVECorporationID)
 
-	for _, kill := range kills.Rows {
+	for _, kill := range kills {
 		regionID, err := parser.database.QueryRegionID(kill.SolarSystemID)
 		if err != nil {
 			misc.Logger.Warnf("Failed to query region ID for solar system #%d", kill.SolarSystemID)
@@ -95,13 +101,7 @@ func (parser *Parser) Update(corporation *models.Corporation) error {
 
 		misc.Logger.Tracef("Solar system ID %d for solar system #%d not found on ignore list (%v), posting kill", regionID, kill.SolarSystemID, corporation.IgnoredSolarSystems)
 
-		shipName, err := parser.database.QueryShipName(kill.Victim.ShipTypeID)
-		if err != nil {
-			misc.Logger.Warnf("Failed to query ship name for ship type #%d", kill.Victim.ShipTypeID)
-			continue
-		}
-
-		err = parser.SendMessage(corporation, kill.KillID, kill.Victim.CharacterName, shipName, true)
+		err = parser.SendMessage(corporation, kill, true)
 		if err != nil {
 			misc.Logger.Warnf("Failed to send kill message: [%v]", err)
 			continue
@@ -120,9 +120,9 @@ func (parser *Parser) Update(corporation *models.Corporation) error {
 		return err
 	}
 
-	misc.Logger.Tracef("Fetched %d losses for corporation #%d", len(losses.Rows), corporation.EVECorporationID)
+	misc.Logger.Tracef("Fetched %d losses for corporation #%d", len(losses), corporation.EVECorporationID)
 
-	for _, loss := range losses.Rows {
+	for _, loss := range losses {
 		regionID, err := parser.database.QueryRegionID(loss.SolarSystemID)
 		if err != nil {
 			misc.Logger.Warnf("Failed to query region ID for solar system #%d", loss.SolarSystemID)
@@ -144,13 +144,7 @@ func (parser *Parser) Update(corporation *models.Corporation) error {
 
 		misc.Logger.Tracef("Solar system ID %d for solar system #%d not found on ignore list (%v), posting loss", regionID, loss.SolarSystemID, corporation.IgnoredSolarSystems)
 
-		shipName, err := parser.database.QueryShipName(loss.Victim.ShipTypeID)
-		if err != nil {
-			misc.Logger.Warnf("Failed to query ship name for ship type #%d", loss.Victim.ShipTypeID)
-			continue
-		}
-
-		err = parser.SendMessage(corporation, loss.KillID, loss.Victim.CharacterName, shipName, false)
+		err = parser.SendMessage(corporation, loss, false)
 		if err != nil {
 			misc.Logger.Warnf("Failed to send loss message: [%v]", err)
 			continue
@@ -174,24 +168,145 @@ func (parser *Parser) Update(corporation *models.Corporation) error {
 	return nil
 }
 
-func (parser *Parser) SendMessage(corporation *models.Corporation, killID int64, playerName string, shipName string, kill bool) error {
-	var comment string
+// SendMessage prepares a payload and sends a formatted kill/loss message to the Slack webhook
+func (parser *Parser) SendMessage(corporation *models.Corporation, entry models.ZKillboardEntry, killEntry bool) error {
+	var payload models.SlackPayload
+	var kill models.SlackAttachment
+	var damageTaken models.SlackField
+	var highestDamage models.SlackField
+	var attackers models.SlackField
+	var value models.SlackField
+	var system models.SlackField
+	var ship models.SlackField
 
-	if kill {
-		comment = corporation.KillComment
-	} else {
-		comment = corporation.LossComment
+	var killer models.ZKillboardAttacker
+	var killerName string
+	var killerCorpName string
+	var killerShipName string
+	var victimName string
+	var victimShipName string
+
+	var highestDamageDealer models.ZKillboardAttacker
+	var highestDamageValue int64
+
+	for _, attacker := range entry.Attackers {
+		if attacker.FinalBlow == 1 {
+			killer = attacker
+			killerCorpName = attacker.CorporationName
+		}
+		if attacker.CharacterID == 0 && attacker.FactionID != 0 {
+			misc.Logger.Debugf("Found attacker with character ID 0 and faction ID #%d for kill #%d", attacker.FactionID, entry.KillID)
+			continue
+		}
+		if attacker.CharacterID != 0 && attacker.DamageDone > highestDamageValue {
+			highestDamageDealer = attacker
+			highestDamageValue = attacker.DamageDone
+		}
 	}
 
-	killLink := fmt.Sprintf("https://zkillboard.com/kill/%d/", killID)
+	shipName, err := parser.database.QueryShipName(killer.ShipTypeID)
+	if err != nil {
+		misc.Logger.Warnf("Failed to query ship type ID #%d for killer of killboard entry #%d", killer.ShipTypeID, entry.KillID)
+		return err
+	}
 
-	comment = strings.Replace(comment, "{corpname}", corporation.Name, -1)
-	comment = strings.Replace(comment, "{shipname}", shipName, -1)
-	comment = strings.Replace(comment, "{playername}", playerName, -1)
-	comment = strings.Replace(comment, "{killid}", strconv.FormatInt(killID, 10), -1)
+	killerShipName = shipName
+
+	if killer.CharacterID == 0 {
+		killerName = shipName
+	} else {
+		killerName = killer.CharacterName
+	}
+
+	shipName, err = parser.database.QueryShipName(entry.Victim.ShipTypeID)
+	if err != nil {
+		misc.Logger.Warnf("Failed to query ship type ID #%d for victim of killboard entry #%d", entry.Victim.ShipTypeID, entry.KillID)
+		return err
+	}
+
+	victimShipName = shipName
+
+	if entry.Victim.CharacterID == 0 {
+		victimName = shipName
+	} else {
+		victimName = entry.Victim.CharacterName
+	}
+
+	solarSystemName, err := parser.database.QuerySolarSystemName(entry.SolarSystemID)
+	if err != nil {
+		misc.Logger.Warnf("Failed to query solar system name for ID #%d of killboard entry #%d", entry.SolarSystemID, entry.KillID)
+		return err
+	}
+
+	var comment string
+
+	if killEntry {
+		comment = corporation.KillComment
+		kill.Color = "good"
+		damageTaken.Title = "Damage dealt"
+	} else {
+		comment = corporation.LossComment
+		kill.Color = "danger"
+		damageTaken.Title = "Damage taken"
+	}
+
+	killLink := fmt.Sprintf("https://zkillboard.com/kill/%d/", entry.KillID)
+
+	comment = strings.Replace(comment, "{victimshipname}", victimShipName, -1)
+	comment = strings.Replace(comment, "{victimname}", victimName, -1)
+	comment = strings.Replace(comment, "{victimcorpname}", entry.Victim.CorporationName, -1)
+	comment = strings.Replace(comment, "{killershipname}", killerShipName, -1)
+	comment = strings.Replace(comment, "{killername}", killerName, -1)
+	comment = strings.Replace(comment, "{killercorpname}", killerCorpName, -1)
+	comment = strings.Replace(comment, "{killid}", strconv.FormatInt(entry.KillID, 10), -1)
 	comment = strings.Replace(comment, "{killlink}", killLink, -1)
 
-	req, err := http.NewRequest("POST", parser.config.SlackWebhookURL, bytes.NewBufferString(comment))
+	kill.Fallback = comment
+	kill.Title = comment
+	kill.TitleLink = killLink
+	kill.ThumbURL = fmt.Sprintf("https://imageserver.eveonline.com/render/%d_64.png", entry.Victim.ShipTypeID)
+
+	damageTaken.Value = humanize.Comma(entry.Victim.DamageTaken)
+	damageTaken.Short = true
+
+	attackers.Title = "Pilots involved"
+	attackers.Value = fmt.Sprintf("%d", len(entry.Attackers))
+	attackers.Short = true
+
+	value.Title = "ISK Value"
+	value.Value = fmt.Sprintf("%s ISK", humanize.Commaf(entry.Misc.TotalValue))
+	value.Short = false
+
+	highestDamage.Title = "Highest damage"
+	highestDamage.Value = fmt.Sprintf("<https://zkillboard.com/character/%d|%s> (%d damage)", highestDamageDealer.CharacterID, highestDamageDealer.CharacterName, highestDamageValue)
+	highestDamage.Short = true
+
+	system.Title = "Solar system"
+	system.Value = fmt.Sprintf("<https://zkillboard.com/system/%d|%s>", entry.SolarSystemID, solarSystemName)
+	system.Short = true
+
+	ship.Title = "Ship"
+	ship.Value = victimShipName
+	ship.Short = true
+
+	kill.Fields = append(kill.Fields, damageTaken)
+	kill.Fields = append(kill.Fields, attackers)
+	kill.Fields = append(kill.Fields, highestDamage)
+	kill.Fields = append(kill.Fields, ship)
+	kill.Fields = append(kill.Fields, value)
+	kill.Fields = append(kill.Fields, system)
+
+	kill.UnfurlLinks = false
+	kill.Channel = "sam_testing"
+
+	payload.Attachments = append(payload.Attachments, kill)
+
+	jsonPayload, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+
+	req, err := http.NewRequest("POST", parser.config.SlackWebhookURL, bytes.NewBuffer(jsonPayload))
 	if err != nil {
 		return err
 	}
@@ -215,42 +330,54 @@ func (parser *Parser) SendMessage(corporation *models.Corporation, killID int64,
 	return nil
 }
 
-func (parser *Parser) FetchKills(corporation *models.Corporation) (models.ZKillboardEntry, error) {
-	var zKillboardEntry models.ZKillboardEntry
-
-	resp, err := http.Get(fmt.Sprintf("https://zkillboard.com/api/kills/corporationID/%d/afterKillID/%d/xml/", corporation.EVECorporationID, corporation.LastKillID))
+// FetchKills retrieves and parses the latest kills from the zKillboard API
+func (parser *Parser) FetchKills(corporation *models.Corporation) ([]models.ZKillboardEntry, error) {
+	resp, err := http.Get(fmt.Sprintf("https://zkillboard.com/api/kills/corporationID/%d/afterKillID/%d", corporation.EVECorporationID, corporation.LastKillID))
 	if err != nil {
-		return zKillboardEntry, err
+		return nil, err
 	}
 
 	defer resp.Body.Close()
 
-	err = xml.NewDecoder(resp.Body).Decode(&zKillboardEntry)
-	if err != nil && !strings.EqualFold(err.Error(), "EOF") {
-		return zKillboardEntry, err
+	response, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
 	}
 
-	sort.Sort(models.ByKillID(zKillboardEntry.Rows))
+	var kills []models.ZKillboardEntry
 
-	return zKillboardEntry, nil
+	err = json.Unmarshal(response, &kills)
+	if err != nil {
+		return nil, err
+	}
+
+	sort.Sort(models.ByKillID(kills))
+
+	return kills, nil
 }
 
-func (parser *Parser) FetchLosses(corporation *models.Corporation) (models.ZKillboardEntry, error) {
-	var zKillboardEntry models.ZKillboardEntry
-
-	resp, err := http.Get(fmt.Sprintf("https://zkillboard.com/api/losses/corporationID/%d/afterKillID/%d/xml/", corporation.EVECorporationID, corporation.LastLossID))
+// FetchLosses retrieves and parses the latest losses from the zKillboard API
+func (parser *Parser) FetchLosses(corporation *models.Corporation) ([]models.ZKillboardEntry, error) {
+	resp, err := http.Get(fmt.Sprintf("https://zkillboard.com/api/losses/corporationID/%d/afterKillID/%d", corporation.EVECorporationID, corporation.LastLossID))
 	if err != nil {
-		return zKillboardEntry, err
+		return nil, err
 	}
 
 	defer resp.Body.Close()
 
-	err = xml.NewDecoder(resp.Body).Decode(&zKillboardEntry)
-	if err != nil && !strings.EqualFold(err.Error(), "EOF") {
-		return zKillboardEntry, err
+	response, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
 	}
 
-	sort.Sort(models.ByKillID(zKillboardEntry.Rows))
+	var losses []models.ZKillboardEntry
 
-	return zKillboardEntry, nil
+	err = json.Unmarshal(response, &losses)
+	if err != nil {
+		return nil, err
+	}
+
+	sort.Sort(models.ByKillID(losses))
+
+	return losses, nil
 }
