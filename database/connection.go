@@ -25,13 +25,6 @@ type Connection interface {
 	// LoadAllIgnoredSolarSystemsForCorporation retrieves all ignored solar systems associated with the given corporation from the database, returning an error if the query failed
 	LoadAllIgnoredSolarSystemsForCorporation(corporationID int64) ([]int64, error)
 
-	// QueryShipName looks up the given ship type ID and returns the ship's name, returning an error if the query failed
-	QueryShipName(shipTypeID int64) (string, error)
-	// QueryRegionID looks up the given solar system ID and returns the associated region ID, returning an error if the query failed
-	QueryRegionID(solarSystemID int64) (int64, error)
-	// QuerySolarSystemName looks up the given solar system ID and returns the associated solar system name, returning an error if the query failed
-	QuerySolarSystemName(solarSystemID int64) (string, error)
-
 	// SaveCorporation saves a corporation to the database, returning the updated model or an error if the query failed
 	SaveCorporation(corporation *models.Corporation) (*models.Corporation, error)
 }

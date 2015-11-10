@@ -22,15 +22,17 @@ import (
 type Parser struct {
 	Corporations []*models.Corporation
 
-	scheduler *time.Ticker
-	config    *misc.Configuration
-	database  database.Connection
+	crestClient *models.CRESTClient
+	scheduler   *time.Ticker
+	config      *misc.Configuration
+	database    database.Connection
 }
 
 // SetupParser sets up a new parser with the given information
 func SetupParser(conf *misc.Configuration, db database.Connection, interval time.Duration) (*Parser, error) {
 	parser := &Parser{
 		Corporations: make([]*models.Corporation, 0),
+		crestClient:  models.NewCRESTClient("https://public-crest.eveonline.com/"),
 		scheduler:    time.NewTicker(interval),
 		config:       conf,
 		database:     db,
@@ -72,6 +74,13 @@ func (parser *Parser) Start() {
 func (parser *Parser) Update(corporation *models.Corporation) error {
 	misc.Logger.Debugf("Running update for corporation #%d", corporation.EVECorporationID)
 
+	err := parser.FetchCRESTRoot()
+	if err != nil {
+		return err
+	}
+
+	misc.Logger.Tracef("Fetched CREST root before kill processing")
+
 	kills, err := parser.FetchKills(corporation)
 	if err != nil {
 		return err
@@ -82,7 +91,7 @@ func (parser *Parser) Update(corporation *models.Corporation) error {
 	for _, kill := range kills {
 		misc.Logger.Tracef("Processing kill #%d (victim %q)", kill.KillID, kill.Victim.CharacterName)
 
-		regionID, err := parser.database.QueryRegionID(kill.SolarSystemID)
+		info, err := parser.crestClient.FetchLocationInfo(kill.SolarSystemID)
 		if err != nil {
 			misc.Logger.Warnf("Failed to query region ID for solar system #%d", kill.SolarSystemID)
 			continue
@@ -90,18 +99,18 @@ func (parser *Parser) Update(corporation *models.Corporation) error {
 
 		skip := false
 		for _, solarSystem := range corporation.IgnoredSolarSystems {
-			if solarSystem == regionID || solarSystem == kill.SolarSystemID {
+			if strings.EqualFold(fmt.Sprintf("%d", solarSystem), info.RegionID) || solarSystem == kill.SolarSystemID {
 				skip = true
 				break
 			}
 		}
 
 		if skip {
-			misc.Logger.Debugf("Found solar system ID %d for solar system #%d on ignore list, skipping kill", regionID, kill.SolarSystemID)
+			misc.Logger.Debugf("Found solar system ID %s for solar system #%d on ignore list, skipping kill", info.RegionID, kill.SolarSystemID)
 			continue
 		}
 
-		misc.Logger.Tracef("Solar system ID %d for solar system #%d not found on ignore list (%v), posting kill", regionID, kill.SolarSystemID, corporation.IgnoredSolarSystems)
+		misc.Logger.Tracef("Solar system ID %s for solar system #%d not found on ignore list (%v), posting kill", info.RegionID, kill.SolarSystemID, corporation.IgnoredSolarSystems)
 
 		err = parser.SendMessage(corporation, kill, true)
 		if err != nil {
@@ -129,7 +138,7 @@ func (parser *Parser) Update(corporation *models.Corporation) error {
 	for _, loss := range losses {
 		misc.Logger.Tracef("Processing loss #%d (victim %q)", loss.KillID, loss.Victim.CharacterName)
 
-		regionID, err := parser.database.QueryRegionID(loss.SolarSystemID)
+		info, err := parser.crestClient.FetchLocationInfo(loss.SolarSystemID)
 		if err != nil {
 			misc.Logger.Warnf("Failed to query region ID for solar system #%d", loss.SolarSystemID)
 			continue
@@ -137,18 +146,18 @@ func (parser *Parser) Update(corporation *models.Corporation) error {
 
 		skip := false
 		for _, solarSystem := range corporation.IgnoredSolarSystems {
-			if solarSystem == regionID || solarSystem == loss.SolarSystemID {
+			if strings.EqualFold(fmt.Sprintf("%d", solarSystem), info.RegionID) || solarSystem == loss.SolarSystemID {
 				skip = true
 				break
 			}
 		}
 
 		if skip {
-			misc.Logger.Debugf("Found solar system ID %d for solar system #%d on ignore list, skipping loss", regionID, loss.SolarSystemID)
+			misc.Logger.Debugf("Found solar system ID %s for solar system #%d on ignore list, skipping loss", info.RegionID, loss.SolarSystemID)
 			continue
 		}
 
-		misc.Logger.Tracef("Solar system ID %d for solar system #%d not found on ignore list (%v), posting loss", regionID, loss.SolarSystemID, corporation.IgnoredSolarSystems)
+		misc.Logger.Tracef("Solar system ID %s for solar system #%d not found on ignore list (%v), posting loss", info.RegionID, loss.SolarSystemID, corporation.IgnoredSolarSystems)
 
 		err = parser.SendMessage(corporation, loss, false)
 		if err != nil {
@@ -208,38 +217,52 @@ func (parser *Parser) SendMessage(corporation *models.Corporation, entry models.
 		}
 	}
 
-	shipName, err := parser.database.QueryShipName(killer.ShipTypeID)
+	shipName, err := parser.crestClient.FetchItemType(killer.ShipTypeID)
 	if err != nil {
 		misc.Logger.Warnf("Failed to query ship type ID #%d for killer of killboard entry #%d", killer.ShipTypeID, entry.KillID)
 		return err
 	}
 
-	killerShipName = shipName
+	killerShipName = shipName.Name
 
 	if killer.CharacterID == 0 {
-		killerName = shipName
+		killerName = shipName.Name
 	} else {
 		killerName = killer.CharacterName
 	}
 
-	shipName, err = parser.database.QueryShipName(entry.Victim.ShipTypeID)
+	shipName, err = parser.crestClient.FetchItemType(entry.Victim.ShipTypeID)
 	if err != nil {
 		misc.Logger.Warnf("Failed to query ship type ID #%d for victim of killboard entry #%d", entry.Victim.ShipTypeID, entry.KillID)
 		return err
 	}
 
-	victimShipName = shipName
+	victimShipName = shipName.Name
 
 	if entry.Victim.CharacterID == 0 {
-		victimName = shipName
+		victimName = shipName.Name
 	} else {
 		victimName = entry.Victim.CharacterName
 	}
 
-	solarSystemName, err := parser.database.QuerySolarSystemName(entry.SolarSystemID)
+	highestDamageShipName, err := parser.crestClient.FetchItemType(highestDamageDealer.ShipTypeID)
 	if err != nil {
-		misc.Logger.Warnf("Failed to query solar system name for ID #%d of killboard entry #%d", entry.SolarSystemID, entry.KillID)
+		misc.Logger.Warnf("Failed to query ship type ID #%d for highest damage dealer of killboard entry #%d", highestDamageDealer.ShipTypeID, entry.KillID)
 		return err
+	}
+
+	locationInfo, err := parser.crestClient.FetchLocationInfo(entry.SolarSystemID)
+	if err != nil {
+		misc.Logger.Warnf("Failed to query location info for solar system ID #%d of killboard entry #%d", entry.SolarSystemID, entry.KillID)
+		return err
+	}
+
+	var victimMembership string
+
+	if len(entry.Victim.AllianceName) > 0 {
+		victimMembership = fmt.Sprintf("<https://zkillboard.com/corporation/%d|%s> | <https://zkillboard.com/alliance/%d|%s>", entry.Victim.CorporationID, entry.Victim.CorporationName, entry.Victim.AllianceID, entry.Victim.AllianceName)
+	} else {
+		victimMembership = fmt.Sprintf("<https://zkillboard.com/corporation/%d|%s>", entry.Victim.CorporationID, entry.Victim.CorporationName)
 	}
 
 	var comment string
@@ -295,14 +318,26 @@ func (parser *Parser) SendMessage(corporation *models.Corporation, entry models.
 	})
 
 	kill.Fields = append(kill.Fields, models.SlackField{
-		Title: "Solar system",
-		Value: fmt.Sprintf("<https://zkillboard.com/system/%d|%s>", entry.SolarSystemID, solarSystemName),
+		Title: "Destroyed ship",
+		Value: fmt.Sprintf("<https://zkillboard.com/ship/%d|%s>", entry.Victim.ShipTypeID, victimShipName),
 		Short: true,
 	})
 
 	kill.Fields = append(kill.Fields, models.SlackField{
-		Title: "Ship",
-		Value: victimShipName,
+		Title: "Highest damage ship",
+		Value: fmt.Sprintf("<https://zkillboard.com/ship/%d|%s>", highestDamageDealer.ShipTypeID, highestDamageShipName.Name),
+		Short: true,
+	})
+
+	kill.Fields = append(kill.Fields, models.SlackField{
+		Title: "Solar system",
+		Value: fmt.Sprintf("<https://zkillboard.com/system/%d|%s> (%.2f) | %s | <https://zkillboard.com/region/%s|%s>", entry.SolarSystemID, locationInfo.SolarSystemName, locationInfo.SolarSystemSecurity, locationInfo.ConstellationName, locationInfo.RegionID, locationInfo.RegionName),
+		Short: true,
+	})
+
+	kill.Fields = append(kill.Fields, models.SlackField{
+		Title: "Victim membership",
+		Value: victimMembership,
 		Short: true,
 	})
 
@@ -345,6 +380,18 @@ func (parser *Parser) SendMessage(corporation *models.Corporation, entry models.
 
 		return fmt.Errorf("Failed to send message: %s (status code: %d)", string(respBody), resp.StatusCode)
 	}
+
+	return nil
+}
+
+// FetchCRESTRoot fetches the CREST root endpoint and checks the server version before performing other lookup requests
+func (parser *Parser) FetchCRESTRoot() error {
+	root, err := parser.crestClient.FetchRoot()
+	if err != nil {
+		return err
+	}
+
+	parser.crestClient.CheckServerVersion(root.ServerVersion)
 
 	return nil
 }

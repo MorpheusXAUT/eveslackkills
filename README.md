@@ -3,7 +3,7 @@ eveslackkills
 
 [![Travis CI](https://travis-ci.org/MorpheusXAUT/eveslackkills.svg?branch=master)](https://travis-ci.org/MorpheusXAUT/eveslackkills) [![GoDoc](https://godoc.org/github.com/MorpheusXAUT/eveslackkills?status.svg)](https://godoc.org/github.com/MorpheusXAUT/eveslackkills)
 
-eveslackkills fetches kill- and loss-mails for a given corporation and posts them to a specified killboard-channel in Slack.
+eveslackkills fetches kill- and loss-mails for a given corporation and posts them to a specified killboard-channel in Slack. eveslackkills uses the EVE CREST to retrieve information about ships and solar systems, so no manual SDE data updates have to be performed anymore.
 
 Requirements
 ---------
@@ -11,7 +11,6 @@ Requirements
 - Slack
 - MySQL server
 - [Go 1.2 or newer](https://golang.org/dl/) to compile application (latest recommended)
-- [EVE Static Data Export for MySQL](https://www.fuzzwork.co.uk/dump/) (only "invTypes" and "mapSolarSystems" required)
 
 
 Instructions
@@ -26,7 +25,6 @@ Instructions
   - You will only need the generated executable, no additional files as cloned from the repository
 - Create the MySQL database required for the application
   - Use the script provided in database/mysql/eveslackkills_create.sql to create the database/tables required
-  - Import the "invTypes" and "mapSolarSystems" tables from the EVE SDE MySQL dump
   - Set up a username/password for the application to access the database
 - Create a config file "config.cfg" using JSON format
 

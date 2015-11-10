@@ -116,45 +116,6 @@ func (c *DatabaseConnection) LoadAllIgnoredSolarSystemsForCorporation(corporatio
 	return ignoredSolarSystems, nil
 }
 
-// QueryShipName looks up the given ship type ID in the MySQL database and returns the ship's name, returning an error if the query failed
-func (c *DatabaseConnection) QueryShipName(shipTypeID int64) (string, error) {
-	row := c.conn.QueryRowx("SELECT typeName FROM invTypes WHERE typeID=?", shipTypeID)
-
-	var shipName string
-	err := row.Scan(&shipName)
-	if err != nil {
-		return "", err
-	}
-
-	return shipName, nil
-}
-
-// QueryRegionID looks up the given solar system ID in the MySQL database and returns the associated region ID, returning an error if the query failed
-func (c *DatabaseConnection) QueryRegionID(solarSystemID int64) (int64, error) {
-	row := c.conn.QueryRowx("SELECT regionID FROM mapSolarSystems WHERE solarSystemID=?", solarSystemID)
-
-	var regionID int64
-	err := row.Scan(&regionID)
-	if err != nil {
-		return -1, err
-	}
-
-	return regionID, nil
-}
-
-// QuerySolarSystemName looks up the given solar system ID in the MySQL database and returns the associated solar system name, returning an error if the query failed
-func (c *DatabaseConnection) QuerySolarSystemName(solarSystemID int64) (string, error) {
-	row := c.conn.QueryRowx("SELECT solarSystemName from mapSolarSystems WHERE solarSystemID=?", solarSystemID)
-
-	var solarSystemName string
-	err := row.Scan(&solarSystemName)
-	if err != nil {
-		return "", err
-	}
-
-	return solarSystemName, nil
-}
-
 // SaveCorporation saves a corporation to the database, returning the updated model or an error if the query failed
 func (c *DatabaseConnection) SaveCorporation(corporation *models.Corporation) (*models.Corporation, error) {
 	if corporation.ID > 0 {
