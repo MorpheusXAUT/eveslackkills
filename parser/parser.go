@@ -257,12 +257,12 @@ func (parser *Parser) SendMessage(corporation *models.Corporation, entry models.
 		return err
 	}
 
-	var victimMembership string
+	var victimCorporation string
 
-	if len(entry.Victim.AllianceName) > 0 {
-		victimMembership = fmt.Sprintf("<https://zkillboard.com/corporation/%d|%s> | <https://zkillboard.com/alliance/%d|%s>", entry.Victim.CorporationID, entry.Victim.CorporationName, entry.Victim.AllianceID, entry.Victim.AllianceName)
+	if entry.Victim.AllianceID > 0 {
+		victimCorporation = fmt.Sprintf("<https://zkillboard.com/corporation/%d|%s> | <https://zkillboard.com/alliance/%d|%s>", entry.Victim.CorporationID, entry.Victim.CorporationName, entry.Victim.AllianceID, entry.Victim.AllianceName)
 	} else {
-		victimMembership = fmt.Sprintf("<https://zkillboard.com/corporation/%d|%s>", entry.Victim.CorporationID, entry.Victim.CorporationName)
+		victimCorporation = fmt.Sprintf("<https://zkillboard.com/corporation/%d|%s>", entry.Victim.CorporationID, entry.Victim.CorporationName)
 	}
 
 	var comment string
@@ -336,8 +336,8 @@ func (parser *Parser) SendMessage(corporation *models.Corporation, entry models.
 	})
 
 	kill.Fields = append(kill.Fields, models.SlackField{
-		Title: "Victim membership",
-		Value: victimMembership,
+		Title: "Victim corporation",
+		Value: victimCorporation,
 		Short: true,
 	})
 
